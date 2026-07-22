@@ -9,7 +9,7 @@ COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.yaml"
 
 # --- Load config from versions.env ---
 if [ -f "${SCRIPT_DIR}/versions.env" ]; then
-    eval "$(grep -E '^(AGENT_VERSION|WEBUI_VERSION|CONTAINER_RUNTIME|USE_SUDO|HERMES_DASHBOARD|DASHBOARD_CREDENTIAL)=' "${SCRIPT_DIR}/versions.env")"
+    eval "$(grep -E '^(AGENT_VERSION|WEBUI_VERSION|CONTAINER_RUNTIME|USE_SUDO|HERMES_DASHBOARD|HERMES_WEBUI|DASHBOARD_CREDENTIAL)=' "${SCRIPT_DIR}/versions.env")"
 fi
 CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-auto}"
 USE_SUDO="${USE_SUDO:-false}"
@@ -21,6 +21,7 @@ USE_SUDO="${USE_SUDO:-false}"
 #   user:password  — custom credentials
 DASHBOARD_CREDENTIAL="${DASHBOARD_CREDENTIAL:-admin:admin}"
 HERMES_DASHBOARD="${HERMES_DASHBOARD:-0}"
+HERMES_WEBUI="${HERMES_WEBUI:-0}"
 
 if [ "$DASHBOARD_CREDENTIAL" = "auto" ]; then
     CRED_FILE="${SCRIPT_DIR}/.dashboard_credential"
@@ -36,6 +37,7 @@ fi
 
 export DASHBOARD_CREDENTIAL
 export HERMES_DASHBOARD
+export HERMES_WEBUI
 
 # --- Auto-detect ---
 if [ "$CONTAINER_RUNTIME" = "auto" ]; then
@@ -62,7 +64,7 @@ export HERMES_SUITE_IMAGE_TAG="${AGENT_VER_CLEAN}-${WEBUI_VER_CLEAN}"
 
 # For sudo: compose needs explicit env passthrough
 if [ "$USE_SUDO" = "true" ]; then
-    COMPOSE_PREFIX="sudo env HERMES_SUITE_IMAGE_TAG=${HERMES_SUITE_IMAGE_TAG} DASHBOARD_CREDENTIAL=${DASHBOARD_CREDENTIAL} HERMES_DASHBOARD=${HERMES_DASHBOARD}"
+    COMPOSE_PREFIX="sudo env HERMES_SUITE_IMAGE_TAG=${HERMES_SUITE_IMAGE_TAG} DASHBOARD_CREDENTIAL=${DASHBOARD_CREDENTIAL} HERMES_DASHBOARD=${HERMES_DASHBOARD} HERMES_WEBUI=${HERMES_WEBUI}"
 else
     COMPOSE_PREFIX=""
 fi
@@ -108,7 +110,11 @@ esac
 echo ""
 echo "Hermes Suite is running:"
 echo "  Gateway:    http://localhost:8642"
-echo "  WebUI:      http://localhost:8787"
+if [ "$HERMES_WEBUI" = "0" ] || [ "$HERMES_WEBUI" = "false" ] || [ "$HERMES_WEBUI" = "no" ] || [ "$HERMES_WEBUI" = "off" ]; then
+    echo "  WebUI:      disabled (HERMES_WEBUI=$HERMES_WEBUI)"
+else
+    echo "  WebUI:      http://localhost:8787"
+fi
 if [ "$HERMES_DASHBOARD" = "0" ] || [ "$HERMES_DASHBOARD" = "false" ] || [ "$HERMES_DASHBOARD" = "no" ] || [ "$HERMES_DASHBOARD" = "off" ]; then
     echo "  Dashboard:  disabled (HERMES_DASHBOARD=$HERMES_DASHBOARD)"
 else

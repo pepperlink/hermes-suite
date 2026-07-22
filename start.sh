@@ -13,10 +13,11 @@ set -e
 
 HERMES_HOME="${HERMES_HOME:-/opt/data}"
 INSTALL_DIR="/opt/hermes"
-# Must always be set: supervisord expands %(ENV_HERMES_DASHBOARD)s for autostart.
-# Default 0 = dashboard off. Set to 1 (or true/yes/on) to enable.
+# Must always be set: supervisord expands %(ENV_HERMES_*)s for autostart.
+# Default 0 = off. Set to 1 (or true/yes/on) to enable.
 HERMES_DASHBOARD="${HERMES_DASHBOARD:-0}"
-export HERMES_DASHBOARD
+HERMES_WEBUI="${HERMES_WEBUI:-0}"
+export HERMES_DASHBOARD HERMES_WEBUI
 
 # --- Helper: runtime detection ---
 # Detect Docker runtime. We check /.dockerenv first (created by Docker at
@@ -25,9 +26,16 @@ export HERMES_DASHBOARD
 # may contain a stale /run/.containerenv baked into the image layer, so that
 # file alone is unreliable.
 is_docker() {
-    [ -f /.dockerenv ] && return 0
-    grep -qaE '/docker/|docker-|containerd' /proc/1/cgroup 2>/dev/null && return 0
-    return 1
+    if $CONTAINER_RUNTIME = "podman"; then
+        return 1
+    else
+        return 0
+        # if [ -f /.dockerenv ]; then
+        #     return 0
+        # fi
+        # grep -qaE '/docker/|docker-|containerd' /proc/1/cgroup 2>/dev/null && return 0
+        # return 1
+    fi
 }
 
 # --- Helper: dashboard auth credential setup ---
@@ -106,7 +114,11 @@ print_banner() {
     else
         echo " Dashboard:  http://0.0.0.0:9119"
     fi
-    echo " WebUI:      http://0.0.0.0:8787"
+    if [ "$HERMES_WEBUI" = "0" ] || [ "$HERMES_WEBUI" = "false" ] || [ "$HERMES_WEBUI" = "no" ] || [ "$HERMES_WEBUI" = "off" ]; then
+        echo " WebUI:      disabled (HERMES_WEBUI=$HERMES_WEBUI)"
+    else
+        echo " WebUI:      http://0.0.0.0:8787"
+    fi
     echo "=========================================="
     if [ -n "${HERMES_DASHBOARD_BASIC_AUTH_USERNAME:-}" ]; then
         echo " Dashboard login: $HERMES_DASHBOARD_BASIC_AUTH_USERNAME / $HERMES_DASHBOARD_BASIC_AUTH_PASSWORD"
