@@ -11,6 +11,8 @@ on:
       - 'supervisord.conf'
       - 'start.sh'
       - '.github/workflows/build.yml'
+    tags:
+      - 'v*'
 
 env:
   REGISTRY: ghcr.io
@@ -20,31 +22,145 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Read versions from versions.env
+      - name: Resolve versions and suite semver
         id: versions
         run: |
-          # versions.env is the single source of truth (also updated by Renovate)
-          # shellcheck source=/dev/null
-          eval "$(grep -E '^(AGENT_VERSION|WEBUI_VERSION)=' versions.env)"
+          set -euo pipefail
 
+          eval "$(grep -E '^(AGENT_VERSION|WEBUI_VERSION)=' versions.env)"
           AGENT_VER_CLEAN="${AGENT_VERSION#v}"
           WEBUI_VER_CLEAN="${WEBUI_VERSION#v}"
-          DOCKER_TAG="${AGENT_VER_CLEAN}-${WEBUI_VER_CLEAN}"
+          COMPOUND_TAG="${AGENT_VER_CLEAN}-${WEBUI_VER_CLEAN}"
 
-          echo "agent_version=${AGENT_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "webui_version=${WEBUI_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "docker_tag=${DOCKER_TAG}" >> "$GITHUB_OUTPUT"
+          # --- helpers -------------------------------------------------------
+          # Rank bump types: patch=0, minor=1, major=2
+          bump_rank() {
+            case "$1" in
+              major) echo 2 ;;
+              minor) echo 1 ;;
+              *)     echo 0 ;;
+            esac
+          }
 
-          echo "Suite tag:     ${DOCKER_TAG}"
-          echo "Agent version: ${AGENT_VERSION}"
-          echo "WebUI version: ${WEBUI_VERSION}"
+          # Compare two version strings (v-prefix optional).
+          # Uses the first three numeric components (major.minor.patch).
+          # Extra components (e.g. agent CalVer build) count as patch-level change.
+          compare_upstream_bump() {
+            local old="${1#v}" new="${2#v}"
+            local o1=0 o2=0 o3=0 orest= n1=0 n2=0 n3=0 nrest=
+
+            IFS=. read -r o1 o2 o3 orest <<< "${old}."
+            IFS=. read -r n1 n2 n3 nrest <<< "${new}."
+            o1=${o1:-0}; o2=${o2:-0}; o3=${o3:-0}
+            n1=${n1:-0}; n2=${n2:-0}; n3=${n3:-0}
+
+            if [ "$n1" != "$o1" ]; then
+              echo major
+            elif [ "$n2" != "$o2" ]; then
+              echo minor
+            else
+              echo patch
+            fi
+          }
+
+          max_bump() {
+            local a="$1" b="$2"
+            if [ "$(bump_rank "$a")" -ge "$(bump_rank "$b")" ]; then
+              echo "$a"
+            else
+              echo "$b"
+            fi
+          }
+
+          # --- suite semver --------------------------------------------------
+          CREATE_TAG=false
+
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            # Manual (or CI) git tag: use it as the suite version verbatim.
+            SUITE_VERSION="${GITHUB_REF_NAME#v}"
+            BUMP_TYPE=tag
+            echo "Using suite version from git tag: ${SUITE_VERSION}"
+          else
+            # Auto: start from latest v* tag (or 0.0.0), then bump.
+            PREV_TAG="$(git tag -l 'v*' --sort=-v:refname | head -n1 || true)"
+            if [ -z "${PREV_TAG}" ]; then
+              PREV_SUITE="0.0.0"
+            else
+              PREV_SUITE="${PREV_TAG#v}"
+            fi
+
+            IFS=. read -r S_MAJOR S_MINOR S_PATCH <<< "${PREV_SUITE}"
+            S_MAJOR=${S_MAJOR:-0}
+            S_MINOR=${S_MINOR:-0}
+            S_PATCH=${S_PATCH:-0}
+
+            BUMP_TYPE=patch
+
+            # Detect upstream major/minor changes vs previous commit's versions.env
+            if git rev-parse --verify HEAD^ >/dev/null 2>&1 \
+               && git cat-file -e "HEAD^:versions.env" 2>/dev/null; then
+              eval "$(git show HEAD^:versions.env | grep -E '^(AGENT_VERSION|WEBUI_VERSION)=')"
+              PREV_AGENT="${AGENT_VERSION}"
+              PREV_WEBUI="${WEBUI_VERSION}"
+              # Re-read current (eval above overwrote)
+              eval "$(grep -E '^(AGENT_VERSION|WEBUI_VERSION)=' versions.env)"
+
+              AGENT_BUMP="$(compare_upstream_bump "${PREV_AGENT}" "${AGENT_VERSION}")"
+              WEBUI_BUMP="$(compare_upstream_bump "${PREV_WEBUI}" "${WEBUI_VERSION}")"
+              BUMP_TYPE="$(max_bump "${AGENT_BUMP}" "${WEBUI_BUMP}")"
+
+              echo "Upstream agent: ${PREV_AGENT} -> ${AGENT_VERSION} (${AGENT_BUMP})"
+              echo "Upstream webui: ${PREV_WEBUI} -> ${WEBUI_VERSION} (${WEBUI_BUMP})"
+            else
+              echo "No previous versions.env to compare; defaulting to patch bump"
+            fi
+
+            case "${BUMP_TYPE}" in
+              major)
+                S_MAJOR=$((S_MAJOR + 1))
+                S_MINOR=0
+                S_PATCH=0
+                ;;
+              minor)
+                S_MINOR=$((S_MINOR + 1))
+                S_PATCH=0
+                ;;
+              *)
+                S_PATCH=$((S_PATCH + 1))
+                BUMP_TYPE=patch
+                ;;
+            esac
+
+            SUITE_VERSION="${S_MAJOR}.${S_MINOR}.${S_PATCH}"
+            CREATE_TAG=true
+            echo "Auto-bumped suite version: ${PREV_SUITE} -> ${SUITE_VERSION} (${BUMP_TYPE})"
+          fi
+
+          IFS=. read -r SUITE_MAJOR SUITE_MINOR SUITE_PATCH <<< "${SUITE_VERSION}"
+
+          {
+            echo "agent_version=${AGENT_VERSION}"
+            echo "webui_version=${WEBUI_VERSION}"
+            echo "compound_tag=${COMPOUND_TAG}"
+            echo "suite_version=${SUITE_VERSION}"
+            echo "suite_major=${SUITE_MAJOR}"
+            echo "suite_minor=${SUITE_MINOR}"
+            echo "bump_type=${BUMP_TYPE}"
+            echo "create_tag=${CREATE_TAG}"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Compound tag:  ${COMPOUND_TAG}"
+          echo "Suite semver:  ${SUITE_VERSION}"
+          echo "Convenience:   ${SUITE_MAJOR}.${SUITE_MINOR} , ${SUITE_MAJOR} , latest"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -70,7 +186,91 @@ jobs:
             AGENT_VERSION=${{ steps.versions.outputs.agent_version }}
             HERMES_WEBUI_VERSION=${{ steps.versions.outputs.webui_version }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.docker_tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.compound_tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.suite_version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.suite_major }}.${{ steps.versions.outputs.suite_minor }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.suite_major }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          labels: |
+            org.opencontainers.image.version=${{ steps.versions.outputs.suite_version }}
+            org.opencontainers.image.title=hermes-suite
+            hermes-suite.agent-version=${{ steps.versions.outputs.agent_version }}
+            hermes-suite.webui-version=${{ steps.versions.outputs.webui_version }}
+            hermes-suite.compound-tag=${{ steps.versions.outputs.compound_tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Create git tag and GitHub Release
+        if: steps.versions.outputs.create_tag == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="v${{ steps.versions.outputs.suite_version }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git tag -a "${TAG}" -m "hermes-suite ${TAG}
+          agent ${{ steps.versions.outputs.agent_version }}
+          webui ${{ steps.versions.outputs.webui_version }}
+          compound ${{ steps.versions.outputs.compound_tag }}
+          bump ${{ steps.versions.outputs.bump_type }}"
+          git push origin "${TAG}"
+
+          gh release create "${TAG}" \
+            --title "hermes-suite ${TAG}" \
+            --notes "$(cat <<EOF
+          ## Images
+
+          - \`ghcr.io/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.suite_version }}\`
+          - \`ghcr.io/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.suite_major }}.${{ steps.versions.outputs.suite_minor }}\`
+          - \`ghcr.io/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.suite_major }}\`
+          - \`ghcr.io/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.compound_tag }}\` (exact upstream pin)
+          - \`ghcr.io/${{ env.IMAGE_NAME }}:latest\`
+
+          ## Upstream pins
+
+          | Component | Version |
+          |-----------|---------|
+          | hermes-agent | ${{ steps.versions.outputs.agent_version }} |
+          | hermes-webui | ${{ steps.versions.outputs.webui_version }} |
+
+          Bump type: \`${{ steps.versions.outputs.bump_type }}\`
+          EOF
+          )"
+
+      - name: Ensure GitHub Release for manual tag
+        if: steps.versions.outputs.create_tag != 'true' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists"
+            exit 0
+          fi
+
+          gh release create "${TAG}" \
+            --title "hermes-suite ${TAG}" \
+            --notes "$(cat <<EOF
+          ## Images
+
+          - \`ghcr.io/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.suite_version }}\`
+          - \`ghcr.io/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.suite_major }}.${{ steps.versions.outputs.suite_minor }}\`
+          - \`ghcr.io/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.suite_major }}\`
+          - \`ghcr.io/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.compound_tag }}\` (exact upstream pin)
+          - \`ghcr.io/${{ env.IMAGE_NAME }}:latest\`
+
+          ## Upstream pins
+
+          | Component | Version |
+          |-----------|---------|
+          | hermes-agent | ${{ steps.versions.outputs.agent_version }} |
+          | hermes-webui | ${{ steps.versions.outputs.webui_version }} |
+
+          Bump type: \`tag\` (manual)
+          EOF
+          )"
