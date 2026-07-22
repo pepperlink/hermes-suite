@@ -41,6 +41,7 @@ services:
       - HERMES_HOME=/opt/data
       - HERMES_DATA_DIR=/opt/data
       - DASHBOARD_CREDENTIAL=${DASHBOARD_CREDENTIAL:-admin:admin}
+      - HERMES_DASHBOARD=${HERMES_DASHBOARD:-0}
       - PATH=/opt/hermes/.venv/bin:/opt/hermes-webui/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     restart: unless-stopped
     deploy:

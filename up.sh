@@ -9,7 +9,7 @@ COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.yaml"
 
 # --- Load config from versions.env ---
 if [ -f "${SCRIPT_DIR}/versions.env" ]; then
-    eval "$(grep -E '^(AGENT_VERSION|WEBUI_VERSION|CONTAINER_RUNTIME|USE_SUDO|DASHBOARD_CREDENTIAL)=' "${SCRIPT_DIR}/versions.env")"
+    eval "$(grep -E '^(AGENT_VERSION|WEBUI_VERSION|CONTAINER_RUNTIME|USE_SUDO|HERMES_DASHBOARD|DASHBOARD_CREDENTIAL)=' "${SCRIPT_DIR}/versions.env")"
 fi
 CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-auto}"
 USE_SUDO="${USE_SUDO:-false}"
@@ -20,6 +20,7 @@ USE_SUDO="${USE_SUDO:-false}"
 #   auto           — auto-generate a random password (persisted, printed below)
 #   user:password  — custom credentials
 DASHBOARD_CREDENTIAL="${DASHBOARD_CREDENTIAL:-admin:admin}"
+HERMES_DASHBOARD="${HERMES_DASHBOARD:-0}"
 
 if [ "$DASHBOARD_CREDENTIAL" = "auto" ]; then
     CRED_FILE="${SCRIPT_DIR}/.dashboard_credential"
@@ -34,6 +35,7 @@ if [ "$DASHBOARD_CREDENTIAL" = "auto" ]; then
 fi
 
 export DASHBOARD_CREDENTIAL
+export HERMES_DASHBOARD
 
 # --- Auto-detect ---
 if [ "$CONTAINER_RUNTIME" = "auto" ]; then
@@ -60,7 +62,7 @@ export HERMES_SUITE_IMAGE_TAG="${AGENT_VER_CLEAN}-${WEBUI_VER_CLEAN}"
 
 # For sudo: compose needs explicit env passthrough
 if [ "$USE_SUDO" = "true" ]; then
-    COMPOSE_PREFIX="sudo env HERMES_SUITE_IMAGE_TAG=${HERMES_SUITE_IMAGE_TAG} DASHBOARD_CREDENTIAL=${DASHBOARD_CREDENTIAL}"
+    COMPOSE_PREFIX="sudo env HERMES_SUITE_IMAGE_TAG=${HERMES_SUITE_IMAGE_TAG} DASHBOARD_CREDENTIAL=${DASHBOARD_CREDENTIAL} HERMES_DASHBOARD=${HERMES_DASHBOARD}"
 else
     COMPOSE_PREFIX=""
 fi
@@ -107,12 +109,16 @@ echo ""
 echo "Hermes Suite is running:"
 echo "  Gateway:    http://localhost:8642"
 echo "  WebUI:      http://localhost:8787"
-echo "  Dashboard:  http://localhost:9119"
-echo ""
-DASH_USER="${DASHBOARD_CREDENTIAL%%:*}"
-DASH_PASS="${DASHBOARD_CREDENTIAL#*:}"
-echo "  Dashboard Login ID: $DASH_USER"
-echo "  Dashboard Password: $DASH_PASS"
+if [ "$HERMES_DASHBOARD" = "0" ] || [ "$HERMES_DASHBOARD" = "false" ] || [ "$HERMES_DASHBOARD" = "no" ] || [ "$HERMES_DASHBOARD" = "off" ]; then
+    echo "  Dashboard:  disabled (HERMES_DASHBOARD=$HERMES_DASHBOARD)"
+else
+    echo "  Dashboard:  http://localhost:9119"
+    echo ""
+    DASH_USER="${DASHBOARD_CREDENTIAL%%:*}"
+    DASH_PASS="${DASHBOARD_CREDENTIAL#*:}"
+    echo "  Dashboard Login ID: $DASH_USER"
+    echo "  Dashboard Password: $DASH_PASS"
+fi
 echo ""
 echo "Logs: ./logs.sh"
 echo "Stop: ./down.sh"

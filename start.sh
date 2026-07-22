@@ -13,6 +13,10 @@ set -e
 
 HERMES_HOME="${HERMES_HOME:-/opt/data}"
 INSTALL_DIR="/opt/hermes"
+# Must always be set: supervisord expands %(ENV_HERMES_DASHBOARD)s for autostart.
+# Default 0 = dashboard off. Set to 1 (or true/yes/on) to enable.
+HERMES_DASHBOARD="${HERMES_DASHBOARD:-0}"
+export HERMES_DASHBOARD
 
 # --- Helper: runtime detection ---
 # Detect Docker runtime. We check /.dockerenv first (created by Docker at
@@ -75,7 +79,9 @@ setup_hermes() {
     fi
 
     # --- Dashboard basic auth (upstream v2026.7.1 security hardening) ---
-    setup_dashboard_auth
+    if [ "$HERMES_DASHBOARD" != "0" ] && [ "$HERMES_DASHBOARD" != "false" ] && [ "$HERMES_DASHBOARD" != "no" ] && [ "$HERMES_DASHBOARD" != "off" ]; then
+        setup_dashboard_auth
+    fi
 
     # --- Clean up stale PID/lock files from previous container runs ---
     for f in gateway.pid gateway.lock; do
@@ -95,11 +101,17 @@ print_banner() {
     echo " Hermes Suite — All-in-One Container"
     echo "=========================================="
     echo " Gateway:    http://0.0.0.0:8642"
-    echo " Dashboard:  http://0.0.0.0:9119"
+    if [ "$HERMES_DASHBOARD" = "0" ] || [ "$HERMES_DASHBOARD" = "false" ] || [ "$HERMES_DASHBOARD" = "no" ] || [ "$HERMES_DASHBOARD" = "off" ]; then
+        echo " Dashboard:  disabled (HERMES_DASHBOARD=$HERMES_DASHBOARD)"
+    else
+        echo " Dashboard:  http://0.0.0.0:9119"
+    fi
     echo " WebUI:      http://0.0.0.0:8787"
     echo "=========================================="
-    echo " Dashboard login: $HERMES_DASHBOARD_BASIC_AUTH_USERNAME / $HERMES_DASHBOARD_BASIC_AUTH_PASSWORD"
-    echo "=========================================="
+    if [ -n "${HERMES_DASHBOARD_BASIC_AUTH_USERNAME:-}" ]; then
+        echo " Dashboard login: $HERMES_DASHBOARD_BASIC_AUTH_USERNAME / $HERMES_DASHBOARD_BASIC_AUTH_PASSWORD"
+        echo "=========================================="
+    fi
 }
 
 # =============================================================================

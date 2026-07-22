@@ -1,0 +1,67 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits"
+  ],
+  "assignees": [
+    "@cathelijne"
+  ],
+  "vulnerabilityAlerts": {
+    "automerge": true
+  },
+  "gitIgnoredAuthors": [
+    "renovate-bot",
+    "Renovate Bot",
+    "bot@pepperlink.nl",
+    "Renovate Bot <bot@pepperlink.nl>"
+  ],
+  "major": {
+    "dependencyDashboardApproval": true,
+    "automerge": false
+  },
+  "platformAutomerge": true,
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Track hermes-agent and hermes-webui pins in versions.env",
+      "managerFilePatterns": [
+        "/^versions\\.env$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[a-z-]+?) depName=(?<depName>[^\\s]+?)(?: packageName=(?<packageName>[^\\s]+?))?(?: versioning=(?<versioning>[^\\s]+))?\\s+[A-Z_]+_VERSION=(?<currentValue>.+?)\\s"
+      ],
+      "versioningTemplate": "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Group dependencies from versions.env",
+      "groupName": "versions.env",
+      "groupSlug": "versionsenv",
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "pin",
+        "digest"
+      ],
+      "autoApprove": true,
+      "automerge": true
+    },
+    {
+      "description": "Do not auto-merge major updates",
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "autoApprove": false,
+      "automerge": false
+    },
+  ],
+  "hostRules": [
+    {
+      "hostType": "docker",
+      "matchHost": "ghcr.io",
+      "token": "{{ secrets.READ_PACKAGES }}"
+    }
+  ]
+}
