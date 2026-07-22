@@ -1,9 +1,16 @@
 name: Build and Push Multi-Arch Image
 
 on:
+  workflow_dispatch:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
+    paths:
+      - 'versions.env'
+      - 'Dockerfile'
+      - 'supervisord.conf'
+      - 'start.sh'
+      - '.github/workflows/build.yml'
 
 env:
   REGISTRY: ghcr.io
@@ -20,25 +27,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Parse version from tag
+      - name: Read versions from versions.env
         id: versions
         run: |
-          # Tag format: v2026.4.30-0.50.278
-          TAG="${GITHUB_REF_NAME}"
-          # Strip leading 'v' for Docker tag
-          DOCKER_TAG="${TAG#v}"
+          # versions.env is the single source of truth (also updated by Renovate)
+          # shellcheck source=/dev/null
+          eval "$(grep -E '^(AGENT_VERSION|WEBUI_VERSION)=' versions.env)"
+
+          AGENT_VER_CLEAN="${AGENT_VERSION#v}"
+          WEBUI_VER_CLEAN="${WEBUI_VERSION#v}"
+          DOCKER_TAG="${AGENT_VER_CLEAN}-${WEBUI_VER_CLEAN}"
+
+          echo "agent_version=${AGENT_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "webui_version=${WEBUI_VERSION}" >> "$GITHUB_OUTPUT"
           echo "docker_tag=${DOCKER_TAG}" >> "$GITHUB_OUTPUT"
 
-          # Extract agent and webui versions from the compound tag
-          # 2026.4.30-0.50.278 -> agent=2026.4.30, webui=0.50.278
-          AGENT_VER="${DOCKER_TAG%-*}"
-          WEBUI_VER="${DOCKER_TAG##*-}"
-          echo "agent_version=v${AGENT_VER}" >> "$GITHUB_OUTPUT"
-          echo "webui_version=v${WEBUI_VER}" >> "$GITHUB_OUTPUT"
-
           echo "Suite tag:     ${DOCKER_TAG}"
-          echo "Agent version: v${AGENT_VER}"
-          echo "WebUI version: v${WEBUI_VER}"
+          echo "Agent version: ${AGENT_VERSION}"
+          echo "WebUI version: ${WEBUI_VERSION}"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
