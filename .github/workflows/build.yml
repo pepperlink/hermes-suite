@@ -16,7 +16,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: pepperlink/hermes-suite
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build:
@@ -158,8 +158,8 @@ jobs:
             echo "create_tag=${CREATE_TAG}"
           } >> "$GITHUB_OUTPUT"
 
-          echo "Compound tag:  ${COMPOUND_TAG}"
-          echo "Suite semver:  ${SUITE_VERSION}"
+          echo "Suite semver:  ${SUITE_VERSION}  (immutable)"
+          echo "Pin tag:       ${COMPOUND_TAG}  (moves to newest build of these upstreams)"
           echo "Convenience:   ${SUITE_MAJOR}.${SUITE_MINOR} , ${SUITE_MAJOR} , latest"
 
       - name: Set up QEMU
@@ -182,14 +182,17 @@ jobs:
           platforms: linux/amd64
           # platforms: linux/amd64,linux/arm64
           push: true
+          # Attestations show up as extra package versions in GHCR with the same digest.
+          provenance: false
+          sbom: false
           build-args: |
             AGENT_VERSION=${{ steps.versions.outputs.agent_version }}
             HERMES_WEBUI_VERSION=${{ steps.versions.outputs.webui_version }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.compound_tag }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.suite_version }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.suite_major }}.${{ steps.versions.outputs.suite_minor }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.suite_major }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.compound_tag }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           labels: |
             org.opencontainers.image.version=${{ steps.versions.outputs.suite_version }}
@@ -223,10 +226,10 @@ jobs:
             --notes "$(cat <<EOF
           ## Images
 
-          - \`ghcr.io/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.suite_version }}\`
+          - \`ghcr.io/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.suite_version }}\` (suite semver)
           - \`ghcr.io/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.suite_major }}.${{ steps.versions.outputs.suite_minor }}\`
           - \`ghcr.io/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.suite_major }}\`
-          - \`ghcr.io/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.compound_tag }}\` (exact upstream pin)
+          - \`ghcr.io/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.compound_tag }}\` (upstream pin → newest build of these pins)
           - \`ghcr.io/${{ env.IMAGE_NAME }}:latest\`
 
           ## Upstream pins
@@ -258,10 +261,10 @@ jobs:
             --notes "$(cat <<EOF
           ## Images
 
-          - \`ghcr.io/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.suite_version }}\`
+          - \`ghcr.io/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.suite_version }}\` (suite semver)
           - \`ghcr.io/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.suite_major }}.${{ steps.versions.outputs.suite_minor }}\`
           - \`ghcr.io/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.suite_major }}\`
-          - \`ghcr.io/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.compound_tag }}\` (exact upstream pin)
+          - \`ghcr.io/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.compound_tag }}\` (upstream pin → newest build of these pins)
           - \`ghcr.io/${{ env.IMAGE_NAME }}:latest\`
 
           ## Upstream pins
