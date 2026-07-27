@@ -12,12 +12,28 @@
 set -e
 
 HERMES_HOME="${HERMES_HOME:-/opt/data}"
+HERMES_DATA_DIR="${HERMES_DATA_DIR:-$HERMES_HOME}"
 INSTALL_DIR="/opt/hermes"
-# Must always be set: supervisord expands %(ENV_HERMES_*)s for autostart.
-# Default 0 = off. Set to 1 (or true/yes/on) to enable.
+
+# Optional services — set to 1/true/yes/on to enable (default off).
+# Must always be exported: supervisord expands %(ENV_HERMES_*)s for autostart.
 HERMES_DASHBOARD="${HERMES_DASHBOARD:-0}"
 HERMES_WEBUI="${HERMES_WEBUI:-0}"
-export HERMES_DASHBOARD HERMES_WEBUI
+
+# Ensure supervisord (and its children) inherit the full container/K8s env.
+# Do not use program environment= in supervisord.conf — that hid API_SERVER_*
+# and other injected vars behind a tiny hardcoded env.
+export HERMES_HOME HERMES_DATA_DIR HERMES_DASHBOARD HERMES_WEBUI
+export HOME="${HERMES_HOME}"
+case ":${PATH}:" in
+    *:/opt/hermes/.venv/bin:*) ;;
+    *) PATH="/opt/hermes/.venv/bin:${PATH}" ;;
+esac
+case ":${PATH}:" in
+    *:/opt/hermes-webui/venv/bin:*) ;;
+    *) PATH="/opt/hermes-webui/venv/bin:${PATH}" ;;
+esac
+export PATH
 
 # --- Helper: runtime detection ---
 # Detect Docker runtime. We check /.dockerenv first (created by Docker at
@@ -49,6 +65,13 @@ setup_dashboard_auth() {
     DASH_PASS="${cred#*:}"
     export HERMES_DASHBOARD_BASIC_AUTH_USERNAME="$DASH_USER"
     export HERMES_DASHBOARD_BASIC_AUTH_PASSWORD="$DASH_PASS"
+}
+
+env_enabled() {
+    case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+        1|true|yes|on) return 0 ;;
+        *) return 1 ;;
+    esac
 }
 
 # --- Helper: directory and config setup (shared by both paths) ---
@@ -87,7 +110,7 @@ setup_hermes() {
     fi
 
     # --- Dashboard basic auth (upstream v2026.7.1 security hardening) ---
-    if [ "$HERMES_DASHBOARD" != "0" ] && [ "$HERMES_DASHBOARD" != "false" ] && [ "$HERMES_DASHBOARD" != "no" ] && [ "$HERMES_DASHBOARD" != "off" ]; then
+    if env_enabled "$HERMES_DASHBOARD"; then
         setup_dashboard_auth
     fi
 
@@ -109,15 +132,15 @@ print_banner() {
     echo " Hermes Suite — All-in-One Container"
     echo "=========================================="
     echo " Gateway:    http://0.0.0.0:8642"
-    if [ "$HERMES_DASHBOARD" = "0" ] || [ "$HERMES_DASHBOARD" = "false" ] || [ "$HERMES_DASHBOARD" = "no" ] || [ "$HERMES_DASHBOARD" = "off" ]; then
-        echo " Dashboard:  disabled (HERMES_DASHBOARD=$HERMES_DASHBOARD)"
-    else
+    if env_enabled "$HERMES_DASHBOARD"; then
         echo " Dashboard:  http://0.0.0.0:9119"
-    fi
-    if [ "$HERMES_WEBUI" = "0" ] || [ "$HERMES_WEBUI" = "false" ] || [ "$HERMES_WEBUI" = "no" ] || [ "$HERMES_WEBUI" = "off" ]; then
-        echo " WebUI:      disabled (HERMES_WEBUI=$HERMES_WEBUI)"
     else
+        echo " Dashboard:  disabled (HERMES_DASHBOARD=$HERMES_DASHBOARD)"
+    fi
+    if env_enabled "$HERMES_WEBUI"; then
         echo " WebUI:      http://0.0.0.0:8787"
+    else
+        echo " WebUI:      disabled (HERMES_WEBUI=$HERMES_WEBUI)"
     fi
     echo "=========================================="
     if [ -n "${HERMES_DASHBOARD_BASIC_AUTH_USERNAME:-}" ]; then

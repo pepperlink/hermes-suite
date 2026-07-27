@@ -126,6 +126,7 @@ LABEL org.opencontainers.image.title="Hermes Suite" \
       hermes-suite.webui-version="${HERMES_WEBUI_VERSION}"
 
 ENV PATH="/opt/hermes/.venv/bin:/opt/hermes-webui/venv/bin:$PATH"
+ENV HOME=/opt/data
 ENV HERMES_HOME=/opt/data
 ENV HERMES_DATA_DIR=/opt/data
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/hermes/.playwright
