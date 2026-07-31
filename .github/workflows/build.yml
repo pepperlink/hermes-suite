@@ -8,8 +8,7 @@ on:
     paths:
       - 'versions.env'
       - 'Dockerfile'
-      - 'supervisord.conf'
-      - 'start.sh'
+      - 'docker/**'
       - '.github/workflows/build.yml'
     tags:
       - 'v*'

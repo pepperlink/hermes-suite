@@ -1,0 +1,12 @@
+#!/command/with-contenv sh
+# shellcheck shell=sh
+# Companion to ./run — same permanent-failure pattern as upstream dashboard/finish.
+
+case "${HERMES_WEBUI:-}" in
+    1|true|TRUE|True|yes|YES|Yes)
+        exit 0
+        ;;
+    *)
+        exit 125
+        ;;
+esac

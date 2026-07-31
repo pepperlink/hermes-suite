@@ -1,46 +1,43 @@
 #!/bin/bash
 # =============================================================================
-# logs.sh — Tail Hermes Suite container logs
+# logs.sh — Follow hermes-suite container logs
 # =============================================================================
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.yaml"
 
-# --- Load config from versions.env ---
 if [ -f "${SCRIPT_DIR}/versions.env" ]; then
-    eval "$(grep -E '^(CONTAINER_RUNTIME|USE_SUDO)=' "${SCRIPT_DIR}/versions.env")"
+    eval "$(grep -E '^(AGENT_VERSION|WEBUI_VERSION|CONTAINER_RUNTIME|USE_SUDO)=' "${SCRIPT_DIR}/versions.env")"
 fi
+
 CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-auto}"
 USE_SUDO="${USE_SUDO:-false}"
+export HERMES_SUITE_IMAGE_TAG="${AGENT_VERSION#v}-${WEBUI_VERSION#v}"
 
-# --- Auto-detect ---
 if [ "$CONTAINER_RUNTIME" = "auto" ]; then
-    if command -v podman &>/dev/null; then
-        CONTAINER_RUNTIME="podman"
-    elif command -v docker &>/dev/null; then
+    if command -v docker &>/dev/null; then
         CONTAINER_RUNTIME="docker"
+    elif command -v podman &>/dev/null; then
+        CONTAINER_RUNTIME="podman"
     else
-        echo "ERROR: Neither podman nor docker found."
+        echo "ERROR: Neither docker nor podman found."
         exit 1
     fi
 fi
 
-# --- Determine sudo prefix ---
 SUDO_PREFIX=""
-if [ "$USE_SUDO" = "true" ]; then
-    SUDO_PREFIX="sudo"
-fi
+[ "$USE_SUDO" = "true" ] && SUDO_PREFIX="sudo"
 
-# --- Tail logs ---
 case "$CONTAINER_RUNTIME" in
     podman)
-        export PATH="$HOME/.local/bin:$PATH"
-        PODMAN_COMPOSE="$(command -v podman-compose)"
-        $SUDO_PREFIX "$PODMAN_COMPOSE" -f "${COMPOSE_FILE}" logs -f
+        export PATH="${HOME}/.local/bin:${PATH}"
+        $SUDO_PREFIX env HERMES_SUITE_IMAGE_TAG="${HERMES_SUITE_IMAGE_TAG}" \
+            "$(command -v podman-compose)" -f "${COMPOSE_FILE}" logs -f
         ;;
-    docker|docker-nolog)
-        $SUDO_PREFIX docker compose -f "${COMPOSE_FILE}" logs -f
+    docker)
+        $SUDO_PREFIX env HERMES_SUITE_IMAGE_TAG="${HERMES_SUITE_IMAGE_TAG}" \
+            docker compose -f "${COMPOSE_FILE}" logs -f
         ;;
     *)
         echo "ERROR: Unknown CONTAINER_RUNTIME: $CONTAINER_RUNTIME"

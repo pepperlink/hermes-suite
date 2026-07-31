@@ -8,3 +8,6 @@ build.sh
 up.sh
 down.sh
 logs.sh
+versions.env
+renovate.json
+.github

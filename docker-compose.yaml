@@ -1,55 +1,39 @@
 # =============================================================================
-# Hermes Suite — docker-compose.yaml
+# hermes-suite — docker-compose.yaml
 #
-# Single-container setup: all services in one image.
-# No UID/GID sharing issues — everything runs as the same user.
-#
-# Usage:
-#   podman-compose up -d
-#   podman-compose logs -f
-#   podman-compose down
-#
-# For Docker, replace podman-compose with docker compose.
+# Drop-in for official hermes-agent. WebUI is opt-in (HERMES_WEBUI=1).
+# Dashboard is opt-in (HERMES_DASHBOARD=1) — same as upstream.
 # =============================================================================
 
 services:
-  hermes-suite:
+  hermes:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ascensionoid/hermes-suite:${HERMES_SUITE_IMAGE_TAG}
-    container_name: hermes-suite
-    networks:
-      agent_net:
-        ipv4_address: 10.99.0.11
+      args:
+        AGENT_VERSION: ${AGENT_VERSION:-v2026.7.20}
+        HERMES_WEBUI_VERSION: ${WEBUI_VERSION:-v0.52.76}
+    image: hermes-suite:${HERMES_SUITE_IMAGE_TAG:-latest}
+    container_name: hermes
+    restart: unless-stopped
+    command: gateway run
     ports:
-      # Gateway (CLI, Telegram, webhook)
       - "8642:8642"
-      # WebUI (browser chat interface)
-      - "8787:8787"
-      # Dashboard (monitoring/analytics)
       - "9119:9119"
+      - "8787:8787"
     volumes:
-      # Persist config, sessions, skills, memory across restarts
-      - ~/.hermes:/opt/data:Z
-      # Workspace directory — change to your project directory
-      - ~/workspace:/workspace:z
-      # Clock sync
-      - /etc/localtime:/etc/localtime:ro
+      - ${HERMES_HOST_HOME:-~/.hermes}:/opt/data
+      - ${HERMES_HOST_WORKSPACE:-~/workspace}:/workspace
     environment:
-      - NODE_ENV=production
       - HERMES_HOME=/opt/data
       - HERMES_DATA_DIR=/opt/data
-      - DASHBOARD_CREDENTIAL=${DASHBOARD_CREDENTIAL:-admin:admin}
       - HERMES_DASHBOARD=${HERMES_DASHBOARD:-0}
       - HERMES_WEBUI=${HERMES_WEBUI:-0}
-      - PATH=/opt/hermes/.venv/bin:/opt/hermes-webui/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-    restart: unless-stopped
+      - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=${HERMES_DASHBOARD_BASIC_AUTH_USERNAME:-admin}
+      - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD:-admin}
+      - HERMES_UID=${HERMES_UID:-}
+      - HERMES_GID=${HERMES_GID:-}
     deploy:
       resources:
         limits:
           memory: 4G
-
-networks:
-  agent_net:
-    external: true

@@ -1,154 +1,70 @@
 # =============================================================================
-# Hermes Suite — All-in-One Container Image
-# Combines: hermes-agent + hermes-webui + hermes-dashboard
+# Hermes Suite — hermes-agent + optional hermes-webui
 #
-# Solves Podman v3.4.4 UID/GID sharing limitation between multiple containers
-# by running all three services in a single container under one user.
+# Thin layer on the official nousresearch/hermes-agent image:
+#   - keeps stock s6-overlay PID 1 (/init) and entrypoint
+#   - installs hermes-webui
+#   - adds an s6-rc service (opt-in via HERMES_WEBUI=1)
 #
-# Services:
-#   hermes-gateway   — Agent gateway on port 8642 (CLI, Telegram, cron, tools)
-#   hermes-dashboard — Built-in monitoring dashboard on port 9119
-#   hermes-webui     — Browser chat interface on port 8787
-#
-# Build:  podman build -t hermes-suite:2026.7.7.2-0.51.943 .
-# Run:    podman-compose up -d
+# Drop-in replacement for the official agent image when HERMES_WEBUI is unset/0.
 # =============================================================================
 
-# ---------------------------------------------------------------------------
-# Stage 1: Use the official hermes-agent image as the base
-# This already contains: Python 3.13, Node.js, npm, Playwright, agent code,
-# the built-in web dashboard (hermes dashboard), the gateway, uv, and s6-overlay.
-# ---------------------------------------------------------------------------
-ARG AGENT_VERSION=v2026.7.7.2
-ARG ENABLE_WHATSAPP_BRIDGE=false
+ARG AGENT_VERSION=v2026.7.20
 FROM docker.io/nousresearch/hermes-agent:${AGENT_VERSION}
 
 USER root
 
-# ---------------------------------------------------------------------------
-# Stage 2: Install system dependencies needed by all services
-# ---------------------------------------------------------------------------
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        sudo \
-        git \
-        curl \
-        nano \
-        net-tools \
-        iputils-ping \
-        iproute2 \
-        openssh-client \
-        procps \
-        build-essential \
+# git is needed to pin-clone hermes-webui; base image may already have it.
+RUN apt-get update && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
 
-# Allow hermes user to use sudo without password
-RUN echo "hermes ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
-
 # ---------------------------------------------------------------------------
-# Stage 3: Install Browser tool dependencies for agent
-# npm install + Playwright chromium (needed by browser toolset)
-# WhatsApp bridge is removed by default (ENABLE_WHATSAPP_BRIDGE=false).
-# Set --build-arg ENABLE_WHATSAPP_BRIDGE=true or use --whatsapp flag in
-# build.sh to include it.
+# Install hermes-webui (pinned tag). Own venv + agent extras so in-process
+# agent features work when the UI is enabled.
 # ---------------------------------------------------------------------------
-RUN cd /opt/hermes && \
-    npm install --prefer-offline --no-audit && \
-    npx playwright install --with-deps chromium && \
-    if [ "$ENABLE_WHATSAPP_BRIDGE" != "true" ]; then rm -rf /opt/hermes/scripts/whatsapp-bridge; fi && \
-    rm -rf /var/lib/apt/lists/*
-
-# ---------------------------------------------------------------------------
-# Stage 4: Install supervisord via uv (not available in Debian Trixie apt)
-# We install it into a dedicated venv at /opt/supervisor.
-# ---------------------------------------------------------------------------
-RUN uv venv /opt/supervisor && \
-    uv pip install --python /opt/supervisor/bin/python3 supervisor && \
-    ln -sf /opt/supervisor/bin/supervisord /usr/local/bin/supervisord && \
-    ln -sf /opt/supervisor/bin/supervisorctl /usr/local/bin/supervisorctl
-
-RUN mkdir -p /var/log/supervisor /var/run/supervisor && \
-    chown -R hermes:hermes /var/log/supervisor /var/run/supervisor
-
-# ---------------------------------------------------------------------------
-# Stage 5: Install hermes-webui
-# The webui is a Python web server (server.py). We clone it from GitHub
-# and set up its own venv using uv (avoids python3-venv package requirement).
-# The webui needs the agent's Python deps to import agent modules.
-# We install with the same extras the base image bakes into /opt/hermes/.venv
-# (all, messaging, anthropic, bedrock, azure-identity, hindsight) so the
-# webui's in-process agent has working memory and provider backends (#16).
-#
-# PIN to a specific tag for reproducible builds — never use 'master'.
-# ---------------------------------------------------------------------------
-ARG HERMES_WEBUI_VERSION=v0.51.943
+ARG HERMES_WEBUI_VERSION=v0.52.76
 RUN cd /opt && \
-    git clone --depth 1 --branch ${HERMES_WEBUI_VERSION} \
+    git clone --depth 1 --branch "${HERMES_WEBUI_VERSION}" \
         https://github.com/nesquena/hermes-webui.git hermes-webui && \
     uv venv /opt/hermes-webui/venv && \
-    uv pip install --python /opt/hermes-webui/venv/bin/python3 --no-cache-dir -r /opt/hermes-webui/requirements.txt && \
-    uv pip install --python /opt/hermes-webui/venv/bin/python3 --no-cache-dir -e "/opt/hermes[all,messaging,anthropic,bedrock,azure-identity,hindsight]" && \
-    rm -rf /opt/hermes-webui/.git
-
-# Bake version tag into the webui
-RUN echo "__version__ = '${HERMES_WEBUI_VERSION}'" > /opt/hermes-webui/api/_version.py
-
-# Ensure venv is owned by hermes so runtime lazy-dep auto-install works (#6).
-RUN chown -R hermes:hermes /opt/hermes-webui/venv
+    uv pip install --python /opt/hermes-webui/venv/bin/python3 --no-cache-dir \
+        -r /opt/hermes-webui/requirements.txt && \
+    uv pip install --python /opt/hermes-webui/venv/bin/python3 --no-cache-dir \
+        -e "/opt/hermes[all,messaging,anthropic,bedrock,azure-identity,hindsight]" && \
+    rm -rf /opt/hermes-webui/.git && \
+    echo "__version__ = '${HERMES_WEBUI_VERSION}'" > /opt/hermes-webui/api/_version.py && \
+    chown -R hermes:hermes /opt/hermes-webui
 
 # ---------------------------------------------------------------------------
-# Stage 6: Set up supervisord config and startup script
+# s6-rc: add hermes-webui alongside upstream main-hermes + dashboard
 # ---------------------------------------------------------------------------
-COPY supervisord.conf /etc/supervisor/supervisord.conf
-COPY start.sh /opt/hermes-suite/start.sh
-RUN chmod +x /opt/hermes-suite/start.sh
+COPY docker/s6-rc.d/hermes-webui /etc/s6-overlay/s6-rc.d/hermes-webui
+COPY docker/s6-rc.d/user/contents.d/hermes-webui /etc/s6-overlay/s6-rc.d/user/contents.d/hermes-webui
+RUN chmod 755 /etc/s6-overlay/s6-rc.d/hermes-webui/run \
+              /etc/s6-overlay/s6-rc.d/hermes-webui/finish
 
 # ---------------------------------------------------------------------------
-# Patch: disable dashboard auto-sso — the upstream middleware auto-redirects
-# to /auth/login (OAuth start) when a single provider is registered, but
-# BasicAuthProvider is password-only and raises NotImplementedError there.
-# Skip it so unauthenticated requests go directly to /login (password form).
+# Labels / env (do not override ENTRYPOINT/CMD — keep stock /init)
 # ---------------------------------------------------------------------------
-RUN sed -i 's/auto = _auto_sso_response(request)/auto = None  # disabled: BasicAuthProvider has no OAuth start flow/'     /opt/hermes/hermes_cli/dashboard_auth/middleware.py
-
-# ---------------------------------------------------------------------------
-# Stage 7: Environment, labels, and runtime config
-# ---------------------------------------------------------------------------
-# Re-declare ARGs after FROM so they are available in LABEL
-ARG AGENT_VERSION=v2026.7.7.2
-ARG ENABLE_WHATSAPP_BRIDGE=false
-ARG HERMES_WEBUI_VERSION=v0.51.943
+ARG AGENT_VERSION=v2026.7.20
+ARG HERMES_WEBUI_VERSION=v0.52.76
 
 LABEL org.opencontainers.image.title="Hermes Suite" \
-      org.opencontainers.image.description="All-in-one: hermes-agent + hermes-webui + hermes-dashboard" \
-      org.opencontainers.image.source="https://github.com/sunnysktsang/hermes-suite" \
-      org.opencontainers.image.vendor="sunnysktsang" \
+      org.opencontainers.image.description="Official hermes-agent plus optional hermes-webui (s6)" \
+      org.opencontainers.image.source="https://github.com/pepperlink/hermes-suite" \
       hermes-suite.agent-version="${AGENT_VERSION}" \
       hermes-suite.webui-version="${HERMES_WEBUI_VERSION}"
 
-ENV PATH="/opt/hermes/.venv/bin:/opt/hermes-webui/venv/bin:$PATH"
-ENV HOME=/opt/data
-ENV HERMES_HOME=/opt/data
-ENV HERMES_DATA_DIR=/opt/data
-ENV PLAYWRIGHT_BROWSERS_PATH=/opt/hermes/.playwright
-
-# hermes-agent web dist (built into the base image)
-ENV HERMES_WEB_DIST=/opt/hermes/hermes_cli/web_dist
-
-# hermes-webui settings
+ENV PATH="/opt/hermes-webui/venv/bin:${PATH}"
 ENV HERMES_WEBUI_HOST=0.0.0.0
 ENV HERMES_WEBUI_PORT=8787
 ENV HERMES_WEBUI_STATE_DIR=/opt/data/webui
 ENV HERMES_WEBUI_DEFAULT_WORKSPACE=/workspace
 ENV HERMES_WEBUI_AGENT_DIR=/opt/hermes
 
-# Expose all service ports
-EXPOSE 8642 8787 9119
+# WebUI port (agent already exposes 8642 / 9119)
+EXPOSE 8787
 
-# Workspace directory
-RUN mkdir -p /workspace
-
-WORKDIR /opt/hermes
-
-# Entrypoint: run start.sh which sets up config then launches supervisord
-ENTRYPOINT ["/opt/hermes-suite/start.sh"]
-CMD ["supervisord", "-c", "/etc/supervisor/supervisord.conf", "-n"]
+# ENTRYPOINT/CMD inherited from nousresearch/hermes-agent:
+#   ENTRYPOINT ["/init", "/opt/hermes/docker/main-wrapper.sh"]
+#   CMD []
