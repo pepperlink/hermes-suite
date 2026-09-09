@@ -11,8 +11,8 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        AGENT_VERSION: ${AGENT_VERSION:-v2026.7.20}
-        HERMES_WEBUI_VERSION: ${WEBUI_VERSION:-v0.52.76}
+        AGENT_VERSION: ${AGENT_VERSION:-v2026.9.7}
+        HERMES_WEBUI_VERSION: ${WEBUI_VERSION:-v0.52.113}
     image: hermes-suite:${HERMES_SUITE_IMAGE_TAG:-latest}
     container_name: hermes
     restart: unless-stopped
