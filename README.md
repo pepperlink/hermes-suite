@@ -18,7 +18,7 @@ With `HERMES_WEBUI` unset or `0`, this image is a drop-in replacement for the of
 docker run --rm -it \
   -v ~/.hermes:/opt/data \
   -p 8642:8642 \
-  hermes-suite:2026.7.20-0.52.76 \
+  hermes-suite:2026.9.7-0.52.113 \
   gateway run
 
 # Enable WebUI (and optionally dashboard)
@@ -29,7 +29,7 @@ docker run --rm -it \
   -e HERMES_DASHBOARD=1 \
   -e HERMES_DASHBOARD_BASIC_AUTH_USERNAME=admin \
   -e HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=admin \
-  hermes-suite:2026.7.20-0.52.76 \
+  hermes-suite:2026.9.7-0.52.113 \
   gateway run
 ```
 

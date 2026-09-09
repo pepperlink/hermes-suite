@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git \
 # Install hermes-webui (pinned tag). Own venv + agent extras so in-process
 # agent features work when the UI is enabled.
 # ---------------------------------------------------------------------------
-ARG HERMES_WEBUI_VERSION=v0.52.76
+ARG HERMES_WEBUI_VERSION=v0.52.113
 RUN cd /opt && \
     git clone --depth 1 --branch "${HERMES_WEBUI_VERSION}" \
         https://github.com/nesquena/hermes-webui.git hermes-webui && \
@@ -46,8 +46,8 @@ RUN chmod 755 /etc/s6-overlay/s6-rc.d/hermes-webui/run \
 # ---------------------------------------------------------------------------
 # Labels / env (do not override ENTRYPOINT/CMD — keep stock /init)
 # ---------------------------------------------------------------------------
-ARG AGENT_VERSION=v2026.7.20
-ARG HERMES_WEBUI_VERSION=v0.52.76
+ARG AGENT_VERSION=v2026.9.7
+ARG HERMES_WEBUI_VERSION=v0.52.113
 
 LABEL org.opencontainers.image.title="Hermes Suite" \
       org.opencontainers.image.description="Official hermes-agent plus optional hermes-webui (s6)" \
