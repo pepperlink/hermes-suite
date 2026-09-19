@@ -9,7 +9,7 @@
 # Drop-in replacement for the official agent image when HERMES_WEBUI is unset/0.
 # =============================================================================
 
-ARG AGENT_VERSION=v2026.9.7
+ARG AGENT_VERSION=v2026.9.14
 FROM docker.io/nousresearch/hermes-agent:${AGENT_VERSION}
 
 USER root
