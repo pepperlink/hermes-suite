@@ -79,6 +79,13 @@ ports:
 
 Pins live in `versions.env`. CI builds multi-arch (or amd64) images to GHCR with suite semver + upstream compound tags.
 
+## Build & deploy
+
+- **Image:** `ghcr.io/pepperlink/hermes-suite` — tags: suite semver (e.g. `0.3.2`, moving `0.3`, `latest`) plus compound upstream pins (e.g. `2026.9.14-0.52.113`). Built for `linux/amd64`; the arm64 line in the build is commented out.
+- **Build:** GitHub Actions [`.github/workflows/build.yml`](.github/workflows/build.yml) on pushes to `main` touching `versions.env`, `Dockerfile` or `docker/**` (also `v*` tags, manual dispatch). Renovate bumps the pins in `versions.env`; each build auto-bumps the suite semver, pushes the image, and creates the git tag + GitHub Release.
+- **Deploy:** `pepperlink/home` → ArgoCD app `ai/hermes-agent` (`kubernetes/applications/ai/hermes-agent.yaml`); Renovate opens the tag-bump PRs — merging deploys.
+- **Manual:** upstream merges from `sunnysktsang/hermes-suite` are done by hand.
+
 ## License
 
 MIT — see `LICENSE`. Upstream: hermes-agent (Nous Research), hermes-webui (nesquena).
