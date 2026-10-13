@@ -1,0 +1,6 @@
+name: web-donsetch
+version: 0.1.0
+description: "DonSeTch web search & extract (self-hosted, MCP over HTTP)."
+kind: backend
+provides_web_providers:
+  - donsetch
